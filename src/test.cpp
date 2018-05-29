@@ -25,8 +25,10 @@
 #include <iostream>
 
 #include "client.hpp"
+#include "server.hpp"
 
 modbus::client * client;
+modbus::server * server;
 
 void on_io_error(boost::system::error_code const & error) {
 	std::cout << "Read error: " << error.message() << "\n";
@@ -65,8 +67,10 @@ int main(int argc, char * * argv) {
 	std::string hostname = argv[1];
 
 	modbus::client client{ios};
+    modbus::server server{ios};
 	client.on_io_error = on_io_error;
 	::client = &client;
+    ::server = &server;
 
 	client.connect(hostname, "502", on_connect);
 

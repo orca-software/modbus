@@ -26,6 +26,7 @@ include_directories(SYSTEM
 
 add_library(${PROJECT_NAME}
 	src/client.cpp
+	src/server.cpp
 	src/error.cpp
 )
 
