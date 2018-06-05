@@ -25,6 +25,8 @@
 #pragma once
 
 #include <string>
+#include <array>
+#include <cstdint>
 
 #include <boost/bind.hpp>
 #include <boost/shared_ptr.hpp>
@@ -41,11 +43,13 @@ namespace modbus {
 
 using tcp = boost::asio::ip::tcp;
 
+struct server;
+
 struct tcp_connection: public boost::enable_shared_from_this<tcp_connection> {
   typedef boost::shared_ptr<tcp_connection> pointer;
 
-  static pointer create(boost::asio::io_service& io_service) {
-    return pointer(new tcp_connection(io_service));
+  static pointer create(boost::asio::io_service& io_service, const boost::shared_ptr<server>& srv) {
+    return pointer(new tcp_connection(io_service, srv));
   }
 
   tcp::socket& socket() {
@@ -53,36 +57,69 @@ struct tcp_connection: public boost::enable_shared_from_this<tcp_connection> {
   }
 
   void start() {
-
-    boost::asio::async_write(socket_, boost::asio::buffer(message_),
-        boost::bind(&tcp_connection::handle_write, shared_from_this(),
-          boost::asio::placeholders::error,
-          boost::asio::placeholders::bytes_transferred));
+    socket_.async_read_some(read_buffer_.prepare(1024),
+        boost::bind(&tcp_connection::handle_read, shared_from_this(),
+            boost::asio::placeholders::error,
+            boost::asio::placeholders::bytes_transferred));
   }
 
 private:
   tcp::socket socket_;
-  std::string message_;
-  tcp_connection(boost::asio::io_service& io_service): 
-      socket_(io_service), message_("Hello, world!\n") {};
+  boost::shared_ptr<server> srv_;
+  boost::asio::streambuf read_buffer_;
+  boost::asio::streambuf write_buffer_;
+
+  tcp_connection(boost::asio::io_service& io_service, const boost::shared_ptr<server>& srv): 
+      socket_(io_service), srv_(srv) {};
 
   void handle_write(const boost::system::error_code& ec, size_t bytes_transferred) {
-    socket_.close();
+    if (!ec) {
+      write_buffer_.consume(bytes_transferred);
+    }
   }
-  
+  void handle_read(const boost::system::error_code& ec, size_t bytes_transferred) {
+    if (!ec) {
+      read_buffer_.commit(bytes_transferred);
+    }
+  }
 };
 
 /// A Modbus server base class
-struct server {
+struct server: public boost::enable_shared_from_this<server> {
   server(boost::asio::io_service& io_service): 
-      acceptor_(io_service, tcp::endpoint(tcp::v4(), 502)) {
+      acceptor_(io_service, tcp::endpoint(tcp::v4(), 502)),
+      registers_(1024) {
     start_accept();
+  }
+
+protected:
+  virtual response::write_multiple_registers handle_multiple_write_registers(request::write_multiple_registers& req) {
+    response::write_multiple_registers resp;
+    resp.address = req.address;
+    resp.count = 0;
+    auto iit = req.values.begin();
+    auto oit = registers_.begin() + req.address;
+    while (iit < req.values.end() && oit < registers_.end()) {
+      *oit++ = *iit++;
+      resp.count++;
+    }
+    return resp;
+  }
+  virtual response::read_holding_registers handle_read_holding_registers(request::read_holding_registers& req) {
+    response::read_holding_registers resp;
+    int count = 0;
+    auto it = registers_.cbegin() + req.address;
+    while (count < req.count && it < registers_.end()) {
+      resp.values.push_back(*it++);
+      count++;
+    }
+    return resp;
   }
 
 private:
   void start_accept() {
     tcp_connection::pointer new_connection =
-      tcp_connection::create(acceptor_.get_io_service());
+      tcp_connection::create(acceptor_.get_io_service(), shared_from_this());
 
     acceptor_.async_accept(
         new_connection->socket(),
@@ -101,7 +138,7 @@ private:
   }
 
   tcp::acceptor acceptor_;
-
+  std::vector<std::uint16_t> registers_;
 };
 
 }
