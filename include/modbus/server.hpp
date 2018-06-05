@@ -32,11 +32,14 @@
 #include <boost/shared_ptr.hpp>
 #include <boost/enable_shared_from_this.hpp>
 #include <boost/asio.hpp>
+#include <boost/asio/spawn.hpp>
 
 #include "functions.hpp"
 #include "tcp.hpp"
 #include "request.hpp"
 #include "response.hpp"
+
+#define BOOST_COROUTINES_NO_DEPRECATION_WARNING
 
 namespace modbus {
 
@@ -56,35 +59,44 @@ struct tcp_connection: public boost::enable_shared_from_this<tcp_connection> {
     return socket_;
   }
 
-  void start() {
-    socket_.async_read_some(read_buffer_.prepare(1024),
-        boost::bind(&tcp_connection::handle_read, shared_from_this(),
-            boost::asio::placeholders::error,
-            boost::asio::placeholders::bytes_transferred));
+  void start(boost::asio::yield_context yield) {
+    try {
+      boost::coroutines::coroutine<void>::pull_type handle_read{[this](boost::coroutines::coroutine<void>::push_type &sink) {
+        handle_read_buffer();
+        sink();
+      }};
+      while (socket_.is_open()) {
+        size_t bytes_transferred = socket_.async_read_some(read_buffer_.prepare(1024), yield);
+        read_buffer_.commit(bytes_transferred);
+        handle_read();
+      }
+    }
+    catch (std::exception& e) {
+      // Send a modbus error response...
+    }
   }
 
 private:
   tcp::socket socket_;
   boost::shared_ptr<server> srv_;
+  boost::asio::io_service& io_service_;
   boost::asio::streambuf read_buffer_;
   boost::asio::streambuf write_buffer_;
 
   tcp_connection(boost::asio::io_service& io_service, const boost::shared_ptr<server>& srv): 
-      socket_(io_service), srv_(srv) {};
+      socket_(io_service), srv_(srv), io_service_(io_service) {};
 
   void handle_write(const boost::system::error_code& ec, size_t bytes_transferred) {
     if (!ec) {
       write_buffer_.consume(bytes_transferred);
     }
   }
-  void handle_read(const boost::system::error_code& ec, size_t bytes_transferred) {
-    if (!ec) {
-      read_buffer_.commit(bytes_transferred);
-    }
+  void handle_read_buffer() {
   }
 };
 
-/// A Modbus server base class
+
+// A Modbus server base class
 struct server: public boost::enable_shared_from_this<server> {
   server(boost::asio::io_service& io_service): 
       acceptor_(io_service, tcp::endpoint(tcp::v4(), 502)),
@@ -131,7 +143,7 @@ private:
       const boost::system::error_code& error) {
     if (!error)
     {
-      new_connection->start();
+      boost::asio::spawn(acceptor_.get_io_service(), boost::bind(&tcp_connection::start, new_connection, _1));
     }
 
     start_accept();
