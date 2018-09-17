@@ -32,7 +32,7 @@ namespace impl {
 /// Deserialize a TCP MBAP header.
 template<typename InputIterator>
 InputIterator deserialize(InputIterator start, std::size_t length, tcp_mbap & header, boost::system::error_code & error) {
-	if (!check_length(length, 7, error)) return start;
+	if (!check_length(length, header.size(), error)) return start;
 	start = deserialize_be16(start, header.transaction);
 	start = deserialize_be16(start, header.protocol   );
 	start = deserialize_be16(start, header.length     );
@@ -41,3 +41,5 @@ InputIterator deserialize(InputIterator start, std::size_t length, tcp_mbap & he
 }
 
 }}
+
+// vim: autoindent syntax=cpp noexpandtab tabstop=4 softtabstop=4 shiftwidth=4

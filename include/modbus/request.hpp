@@ -43,6 +43,10 @@ namespace response {
 }
 
 namespace request {
+    struct request {
+		std::uint8_t function = 0;
+		std::uint16_t address;
+    };
 
 	/// Message representing a read_coils request.
 	struct read_coils {
@@ -228,3 +232,5 @@ namespace request {
 	};
 
 }}
+
+// vim: autoindent syntax=cpp noexpandtab tabstop=4 softtabstop=4 shiftwidth=4

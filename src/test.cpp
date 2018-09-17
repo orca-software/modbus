@@ -24,11 +24,13 @@
 
 #include <iostream>
 
+#include <boost/make_shared.hpp>
+
 #include "client.hpp"
 #include "server.hpp"
 
 modbus::client * client;
-modbus::server * server;
+modbus::server<modbus::default_handler> * server;
 
 void on_io_error(boost::system::error_code const & error) {
 	std::cout << "Read error: " << error.message() << "\n";
@@ -67,7 +69,8 @@ int main(int argc, char * * argv) {
 	std::string hostname = argv[1];
 
 	modbus::client client{ios};
-    modbus::server server{ios};
+    auto handler = boost::make_shared<modbus::default_handler>();
+    modbus::server<modbus::default_handler> server{ios, handler};
 	client.on_io_error = on_io_error;
 	::client = &client;
     ::server = &server;
@@ -75,5 +78,6 @@ int main(int argc, char * * argv) {
 	client.connect(hostname, "502", on_connect);
 
 	ios.run();
-
 }
+
+// vim: autoindent syntax=cpp noexpandtab tabstop=4 softtabstop=4 shiftwidth=4

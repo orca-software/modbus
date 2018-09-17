@@ -30,43 +30,26 @@
 namespace modbus {
 namespace impl {
 
-/// Deserialize a read_coils request.
-template<typename InputIterator>
-InputIterator deserialize(InputIterator start, std::size_t length, request::read_coils & adu, boost::system::error_code & error) {
+/// Deserialize a read_coils/read discrete inputs/read input registers/read holding registers request.
+template<typename InputIterator, typename Adu>
+InputIterator deserialize(InputIterator start, std::size_t length, Adu & adu, boost::system::error_code & error) {
 	if (!check_length(length, 5, error)) return start;
-	start = deserialize_be8 (start, adu.function);
+	uint8_t function;
+	start = deserialize_be8 (start, function);
+	if (function != adu.function)
+		error = modbus_error(errc::unexpected_function_code);
 	start = deserialize_be16(start, adu.address );
 	start = deserialize_be16(start, adu.count   );
 	return start;
 }
 
-/// Deserialize a read_discrete_inputs request.
-template<typename InputIterator>
-InputIterator deserialize(InputIterator start, std::size_t length, request::read_discrete_inputs & adu, boost::system::error_code & error) {
-	if (!check_length(length, 5, error)) return start;
-	start = deserialize_be8 (start, adu.function);
-	start = deserialize_be16(start, adu.address );
-	start = deserialize_be16(start, adu.count   );
-	return start;
-}
-
-/// Deserialize a read_holding_registers request.
-template<typename InputIterator>
-InputIterator deserialize(InputIterator start, std::size_t length, request::read_holding_registers & adu, boost::system::error_code & error) {
-	if (!check_length(length, 5, error)) return start;
-	start = deserialize_be8 (start, adu.function);
-	start = deserialize_be16(start, adu.address );
-	start = deserialize_be16(start, adu.count   );
-	return start;
-}
-
-/// Deserialize a read_input_registers request.
-template<typename InputIterator>
-InputIterator deserialize(InputIterator start, std::size_t length, request::read_input_registers & adu, boost::system::error_code & error) {
-	if (!check_length(length, 5, error)) return start;
-	start = deserialize_be8 (start, adu.function);
-	start = deserialize_be16(start, adu.address );
-	start = deserialize_be16(start, adu.count   );
+/// Deserialize a read_coils/read discrete inputs/read input registers/read holding registers request.
+template<typename InputIterator, typename Adu>
+InputIterator deserialize(InputIterator start, std::size_t length, Adu & adu) {
+	boost::system::error_code error;
+	start = deserialize(start, length, adu, error);
+	if (error)
+		throw modbus_exception(error.value());
 	return start;
 }
 
@@ -122,3 +105,5 @@ InputIterator deserialize(InputIterator start, std::size_t length, request::mask
 }
 
 }}
+
+// vim: autoindent syntax=cpp noexpandtab tabstop=4 softtabstop=4 shiftwidth=4

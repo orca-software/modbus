@@ -25,6 +25,8 @@
 #pragma once
 #include <boost/system/error_code.hpp>
 
+#include <exception>
+
 namespace modbus {
 
 /// Modbus error code constants.
@@ -58,4 +60,15 @@ inline boost::system::error_code modbus_error(modbus::errc_t error_code) {
 	return boost::system::error_code(error_code, modbus_category());
 }
 
+struct modbus_exception: public std::runtime_error {
+    modbus_exception(errc_t error): runtime_error("modbus error"), error_(error) {}
+    modbus_exception(int error): runtime_error("modbus error"), error_(static_cast<errc_t>(error)) {}
+    errc_t get_error() {
+        return error_;
+    }
+private:
+    errc_t error_;
+};
+
 }
+// vim: autoindent syntax=cpp expandtab tabstop=4 softtabstop=4 shiftwidth=4
