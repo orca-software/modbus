@@ -6,21 +6,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 add_compile_options(-Wall -Wextra -Wpedantic)
 
-find_package(catkin REQUIRED COMPONENTS)
 find_package(Boost REQUIRED COMPONENTS system thread coroutine)
 
 set(CMAKE_THREAD_PREFER_PTHREAD ON)
 find_package(Threads)
 
-catkin_package(
-	INCLUDE_DIRS include
-	LIBRARIES ${PROJECT_NAME}
-	DEPENDS Boost
-)
-
 include_directories(include/${PROJECT_NAME})
 include_directories(SYSTEM
-	${catkin_INCLUDE_DIRS}
 	${Boost_INCLUDE_DIRS}
 )
 
@@ -35,7 +27,6 @@ add_executable(${PROJECT_NAME}_test_client
 )
 
 target_link_libraries(${PROJECT_NAME}
-	${catkin_LIBRARIES}
 	${Boost_LIBRARIES}
 	Threads::Threads
 )
@@ -45,13 +36,3 @@ target_link_libraries(${PROJECT_NAME}_test_client
 	Threads::Threads
 )
 
-install(TARGETS ${PROJECT_NAME}
-	ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-	LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-	RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-)
-
-install(DIRECTORY include/${PROJECT_NAME}/
-	DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
-	FILES_MATCHING PATTERN "*.hpp"
-)
