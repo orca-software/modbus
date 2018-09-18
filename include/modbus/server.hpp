@@ -80,8 +80,10 @@ private:
 	boost::shared_ptr<ServerHandler> handler_;
 	asio::io_service& io_service_;
 
+
 	tcp_connection(asio::io_service& io_service, const boost::shared_ptr<ServerHandler>& handler): 
 		socket_(io_service), handler_(handler), io_service_(io_service) {};
+
 
 	void read_data(asio::yield_context yield) {
 		asio::streambuf read_buffer;
@@ -91,6 +93,7 @@ private:
 			handle_read(read_buffer, yield);
 		}
 	}
+
 
 	void handle_read(asio::streambuf& read_buffer, asio::yield_context yield) {
 		boost::system::error_code error;
@@ -123,30 +126,52 @@ private:
 		read_buffer.consume(data_size);
 	}
 
+
 	void handle_data(tcp_mbap header, const uint8_t* data, size_t data_size, asio::yield_context yield) {
 		asio::streambuf write_buffer;
 		auto out = std::ostreambuf_iterator<char>(&write_buffer);
+		// Switch can probably be avoided by templatizing requests and responses or putting them in a type list
 		switch (*data) {
-			case functions::read_coils: {
-				request::read_coils req;
-				impl::deserialize(data, data_size, req); 
-				auto response = handler_->handle_read_coils(req);
-				impl::serialize(out, header); 
-				impl::serialize(out, response);
-				asio::async_write(socket_, write_buffer, yield);
+			case functions::read_coils: 
+				handle_request<request::read_coils>(out, header, data, data_size);
 				break;
-			}
 			case functions::read_discrete_inputs:;
+				handle_request<request::read_discrete_inputs>(out, header, data, data_size);
+				break;
 			case functions::read_holding_registers:;
+				handle_request<request::read_holding_registers>(out, header, data, data_size);
+				break;
 			case functions::read_input_registers:;
+				handle_request<request::read_input_registers>(out, header, data, data_size);
+				break;
 			case functions::write_single_coil:;
+				handle_request<request::write_single_coil>(out, header, data, data_size);
+				break;
 			case functions::write_single_register:;
+				handle_request<request::write_single_register>(out, header, data, data_size);
+				break;
 			case functions::write_multiple_coils:;
+				handle_request<request::write_multiple_coils>(out, header, data, data_size);
+				break;
 			case functions::write_multiple_registers:;
+				handle_request<request::write_multiple_registers>(out, header, data, data_size);
+				break;
 			default:
 				 throw modbus_exception(errc::illegal_function); 
 		}
+		asio::async_write(socket_, write_buffer, yield);
 	}
+
+
+	template <typename Request>
+	void handle_request(std::ostreambuf_iterator<char>& out, tcp_mbap header,  const uint8_t* data, size_t data_size) {
+		Request req;
+		typename Request::response resp = handler_->handle(req);
+		header.length = resp.length() + 1;
+		impl::serialize(out, header);
+		impl::serialize(out, resp);
+	}
+
 
 	void write_error(tcp_mbap header, errc::errc_t error, asio::yield_context yield) {
 	}
@@ -156,9 +181,72 @@ private:
 
 struct default_handler {
 	default_handler()
-		: registers_(16 * 1024) {}
+		: registers_(0x20000), coils_(0x20000) {}
 
-	response::write_multiple_registers handle_multiple_write_registers(request::write_multiple_registers& req) {
+	response::read_coils handle(const request::read_coils& req) {
+		response::read_coils resp;
+		resp.values.insert(
+				resp.values.end(), 
+				coils_.cbegin() + req.address,
+				coils_.cbegin() + req.address + req.count
+		);
+		return resp;
+	}
+
+	response::read_discrete_inputs handle(const request::read_discrete_inputs& req) {
+		response::read_discrete_inputs resp;
+		for (int i = 0; i < req.count; ++i) {
+			resp.values.push_back(false);
+		}
+		return resp;
+	}
+
+	response::read_holding_registers handle(const request::read_holding_registers& req) {
+		response::read_holding_registers resp;
+		resp.values.insert(
+				resp.values.end(), 
+				registers_.cbegin() + req.address,
+				registers_.cbegin() + req.address + req.count
+		);
+		return resp;
+	}
+
+	response::read_input_registers handle(const request::read_input_registers& req) {
+		response::read_input_registers resp;
+		for (int i = 0; i < req.count; ++i) {
+			resp.values.push_back(0);
+		}
+		return resp;
+	}
+
+	response::write_single_coil handle(const request::write_single_coil& req) {
+		response::write_single_coil resp;
+		coils_[req.address] = req.value;
+		resp.address = req.address;
+		resp.value = req.value;
+	}
+
+	response::write_single_register handle(const request::write_single_register& req) {
+		response::write_single_register resp;
+		registers_[req.address] = req.value;
+		resp.address = req.address;
+		resp.value = req.value;
+	}
+
+	response::write_multiple_coils handle(const request::write_multiple_coils& req) {
+		response::write_multiple_coils resp;
+		resp.address = req.address;
+		resp.count = 0;
+		auto iit = req.values.begin();
+		auto oit = coils_.begin() + req.address;
+		while (iit < req.values.end() && oit < coils_.end()) {
+			*oit++ = *iit++;
+			++resp.count;
+		}
+		return resp;
+	}
+
+	response::write_multiple_registers handle(const request::write_multiple_registers& req) {
 		response::write_multiple_registers resp;
 		resp.address = req.address;
 		resp.count = 0;
@@ -166,26 +254,13 @@ struct default_handler {
 		auto oit = registers_.begin() + req.address;
 		while (iit < req.values.end() && oit < registers_.end()) {
 			*oit++ = *iit++;
-			resp.count++;
+			++resp.count;
 		}
-		return resp;
-	}
-	response::read_holding_registers handle_read_holding_registers(request::read_holding_registers& req) {
-		response::read_holding_registers resp;
-		int count = 0;
-		auto it = registers_.cbegin() + req.address;
-		while (count < req.count && it < registers_.end()) {
-			resp.values.push_back(*it++);
-			count++;
-		}
-		return resp;
-	}
-	response::read_coils handle_read_coils(request::read_coils& req) {
-		response::read_coils resp;
 		return resp;
 	}
 private:
 	std::vector<std::uint16_t> registers_;
+	std::vector<bool> coils_;
 };
 
 // A Modbus server base class
