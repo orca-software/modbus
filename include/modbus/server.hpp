@@ -30,13 +30,16 @@
 #include <array>
 #include <cstdint>
 #include <ostream>
+#include <set>
 
 #include <boost/bind.hpp>
 #include <boost/shared_ptr.hpp>
+#include <boost/make_shared.hpp>
 #include <boost/enable_shared_from_this.hpp>
 #include <boost/asio.hpp>
 #define BOOST_COROUTINES_NO_DEPRECATION_WARNING
 #include <boost/asio/spawn.hpp>
+#include <iostream>
 
 #include "functions.hpp"
 #include "tcp.hpp"
@@ -57,32 +60,52 @@ template <typename ServerHandler>
 struct server;
 
 template <typename ServerHandler>
-struct tcp_connection: public boost::enable_shared_from_this<tcp_connection<ServerHandler> > {
-	typedef boost::shared_ptr<tcp_connection<ServerHandler> > pointer;
+struct tcp_connection;
 
-	static pointer create(asio::io_service& io_service, const boost::shared_ptr<ServerHandler>& handler) {
-		return pointer(new tcp_connection<ServerHandler>(io_service, handler));
+
+template <typename ServerHandler>
+struct connection_manager;
+
+template <typename ServerHandler>
+struct tcp_connection: public boost::enable_shared_from_this<tcp_connection<ServerHandler> > {
+    typedef boost::shared_ptr<tcp_connection<ServerHandler> > pointer;
+
+	static pointer create(
+			asio::io_service& io_service, 
+			connection_manager<ServerHandler>& connection_manager,
+			const boost::shared_ptr<ServerHandler>& handler) {
+		return boost::make_shared<tcp_connection<ServerHandler> >(io_service, connection_manager, handler);
 	}
 
 	tcp::socket& socket() {
 		return socket_;
 	}
 
-	void start(asio::yield_context yield) {
-		while (socket_.is_open()) {
-			read_data(yield);
-		}
+	void start(asio::yield_context yield); 
+
+	void close() {
+		socket_.close();
 	}
 
-
+	tcp_connection() = delete;
+	tcp_connection(const tcp_connection&) = delete;
+	tcp_connection& operator=(const tcp_connection&) = delete;
+	tcp_connection(
+			asio::io_service& io_service, 
+			connection_manager<ServerHandler>& connection_manager,
+			const boost::shared_ptr<ServerHandler>& handler): 
+		socket_(io_service), 
+		handler_(handler), 
+		io_service_(io_service),
+	    connection_manager_(connection_manager) {
+	};
+	~tcp_connection() {
+	}
 private:
 	tcp::socket socket_;
 	boost::shared_ptr<ServerHandler> handler_;
 	asio::io_service& io_service_;
-
-
-	tcp_connection(asio::io_service& io_service, const boost::shared_ptr<ServerHandler>& handler): 
-		socket_(io_service), handler_(handler), io_service_(io_service) {};
+	connection_manager<ServerHandler>& connection_manager_;
 
 
 	void read_data(asio::yield_context yield) {
@@ -187,6 +210,44 @@ private:
 
 };
 
+template <typename ServerHandler>
+struct connection_manager {
+	connection_manager(const connection_manager&) = delete;
+	connection_manager& operator=(const connection_manager&) = delete;
+
+    connection_manager(): connections_() {}
+
+	void close_all() {
+		for (auto&& connection: connections_) {
+			connection->close();
+		}
+	}
+
+	void add(typename tcp_connection<ServerHandler>::pointer connection) {
+		connections_.insert(connection);
+	}
+
+	void remove(typename tcp_connection<ServerHandler>::pointer connection) {
+		connections_.erase(connection);
+	}
+private:
+	std::set<typename tcp_connection<ServerHandler>::pointer > connections_;
+};
+
+
+template <typename ServerHandler>
+void tcp_connection<ServerHandler>::start(asio::yield_context yield) {
+	while (socket_.is_open()) {
+		try {
+			read_data(yield);
+		}
+		catch (boost::system::system_error&) {
+			socket_.close();
+		}
+	}
+    connection_manager_.remove(this->shared_from_this());
+}
+
 
 struct default_handler {
 	default_handler()
@@ -274,39 +335,50 @@ private:
 	std::vector<bool> coils_;
 };
 
+
 // A Modbus server base class
 template <typename ServerHandler>
 struct server: public boost::enable_shared_from_this<server<ServerHandler> > {
-	server(asio::io_service& io_service, boost::shared_ptr<ServerHandler>& handler): 
-		acceptor_(io_service, tcp::endpoint(tcp::v4(), 502)),
-		handler_(handler) {
+	server(asio::io_service& io_service, boost::shared_ptr<ServerHandler>& handler, int port): 
+		acceptor_(io_service, tcp::endpoint(tcp::v4(), port)),
+		connection_manager_(),
+		handler_(handler),
+	    stopped_(false) {
 			start_accept();
 		}
+	void stop() {
+		stopped_ = true;
+		connection_manager_.close_all();
+		acceptor_.cancel();
+		acceptor_.close();
+	}
 
-	protected:
 
-	private:
+private:
 	void start_accept() {
-		auto  new_connection = tcp_connection<ServerHandler>::create(acceptor_.get_io_service(), handler_);
+		auto new_connection = tcp_connection<ServerHandler>::create(acceptor_.get_io_service(), connection_manager_, handler_);
 
 		acceptor_.async_accept(
 				new_connection->socket(),
 				boost::bind(&server<ServerHandler>::handle_accept, this, new_connection, asio::placeholders::error)
-				);
+		);
 	}
 
 	void handle_accept(typename tcp_connection<ServerHandler>::pointer new_connection,
 			const boost::system::error_code& error) {
 		if (!error)
 		{
+			connection_manager_.add(new_connection);
 			asio::spawn(acceptor_.get_io_service(), boost::bind(&tcp_connection<ServerHandler>::start, new_connection, _1));
 		}
-
-		start_accept();
+		if (!stopped_)
+			start_accept();
 	}
 
 	tcp::acceptor acceptor_;
+	connection_manager<ServerHandler> connection_manager_;
 	boost::shared_ptr<ServerHandler> handler_;
+	bool stopped_;
 };
 
 }

@@ -34,12 +34,9 @@ namespace impl {
 template<typename InputIterator, typename Adu>
 InputIterator deserialize(InputIterator start, std::size_t length, Adu & adu, boost::system::error_code & error) {
 	if (!check_length(length, 5, error)) return start;
-	uint8_t function;
-	start = deserialize_be8 (start, function);
-	if (function != adu.function)
-		error = modbus_error(errc::unexpected_function_code);
-	start = deserialize_be16(start, adu.address );
-	start = deserialize_be16(start, adu.count   );
+	start = deserialize_function (start, adu.function, error);
+	start = deserialize_be16(start, adu.address);
+	start = deserialize_be16(start, adu.count);
 	return start;
 }
 
@@ -49,9 +46,9 @@ template<typename InputIterator>
 InputIterator deserialize(
 		InputIterator start, std::size_t length, request::write_single_coil & adu, boost::system::error_code & error) {
 	if (!check_length(length, 5, error)) return start;
-	start = deserialize_be8 (start, adu.function);
-	start = deserialize_be16(start, adu.address );
-	start = deserialize_bool(start, adu.value   );
+	start = deserialize_function (start, adu.function, error);
+	start = deserialize_be16(start, adu.address);
+	start = deserialize_bool(start, adu.value, error);
 	return start;
 }
 
@@ -60,9 +57,9 @@ template<typename InputIterator>
 InputIterator deserialize(
 		InputIterator start, std::size_t length, request::write_single_register & adu, boost::system::error_code & error) {
 	if (!check_length(length, 5, error)) return start;
-	start = deserialize_be8 (start, adu.function);
-	start = deserialize_be16(start, adu.address );
-	start = deserialize_be16(start, adu.value   );
+	start = deserialize_function (start, adu.function, error);
+	start = deserialize_be16(start, adu.address);
+	start = deserialize_be16(start, adu.value);
 	return start;
 }
 
@@ -71,8 +68,8 @@ template<typename InputIterator>
 InputIterator deserialize(
 		InputIterator start, std::size_t length, request::write_multiple_coils & adu, boost::system::error_code & error) {
 	if (!check_length(length, 3, error)) return start;
-	start = deserialize_be8 (start, adu.function);
-	start = deserialize_be16(start, adu.address );
+	start = deserialize_function (start, adu.function, error);
+	start = deserialize_be16(start, adu.address);
 	start = deserialize_bits_request(start, length - 3, adu.values, error);
 	return start;
 }
@@ -82,7 +79,7 @@ template<typename InputIterator>
 InputIterator deserialize(
 		InputIterator start, std::size_t length, request::write_multiple_registers & adu, boost::system::error_code & error) {
 	if (!check_length(length, 3, error)) return start;
-	start = deserialize_be8 (start, adu.function);
+	start = deserialize_function (start, adu.function, error);
 	start = deserialize_be16(start, adu.address );
 	start = deserialize_words_request(start, length - 3, adu.values, error);
 	return start;
@@ -93,7 +90,7 @@ template<typename InputIterator>
 InputIterator deserialize(
 		InputIterator start, std::size_t length, request::mask_write_register & adu, boost::system::error_code & error) {
 	if (!check_length(length, 7, error)) return start;
-	start = deserialize_be8 (start, adu.function);
+	start = deserialize_function (start, adu.function, error);
 	start = deserialize_be16(start, adu.address );
 	start = deserialize_be16(start, adu.and_mask);
 	start = deserialize_be16(start, adu.or_mask );

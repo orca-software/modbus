@@ -109,7 +109,7 @@ namespace impl {
 	 * \return The input iterator after parsing the function code.
 	 */
 	template<typename InputIterator>
-	InputIterator deserialize_function(InputIterator start, std::uint8_t expected_function, boost::system::error_code & error) {
+	InputIterator deserialize_function(InputIterator start, const std::uint8_t expected_function, boost::system::error_code & error) {
 		std::uint8_t function;
 		start = deserialize_be8(start, function);
 		if (function != expected_function && !error) error = modbus_error(errc::unexpected_function_code);

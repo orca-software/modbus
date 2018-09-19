@@ -99,7 +99,7 @@ protected:
 	std::atomic_flag writing{false};
 
 	/// Track connected state of client.
-	bool _connected;
+	bool connected_;
 
 public:
 	/// Construct a client.
@@ -113,7 +113,7 @@ public:
 	/// Connect to a server.
 	void connect(
 		std::string const & hostname,                                   ///< The IP address or host name of the server.
-		std::string const & port,                                       ///< The port to connect to.
+		int const & port,                                       ///< The port to connect to.
 		std::function<void(boost::system::error_code const &)> callback ///< The callback to invoke when the connection is established, or when an error occurs.
 	);
 
@@ -122,7 +122,7 @@ public:
 		std::string const & hostname,                                   ///< The IP address or host name of the server.
 		std::function<void(boost::system::error_code const &)> callback ///< The callback to invoke when the connection is established, or when an error occurs.
 	) {
-		connect(hostname, "502", callback);
+		connect(hostname, 502, callback);
 	}
 
 	/// Disconnect from the server.
@@ -147,7 +147,7 @@ public:
 
 	/// Check if the client is connected.
 	bool is_connected() {
-		return is_open() && _connected;
+		return is_open() && connected_;
 	}
 
 	/// Read a number of coils from the connected server.

@@ -25,12 +25,12 @@
 #include <iostream>
 
 #include <boost/make_shared.hpp>
+#include <boost/date_time/posix_time/posix_time.hpp>
 
 #include "client.hpp"
 #include "server.hpp"
 
 modbus::client * client;
-modbus::server<modbus::default_handler> * server;
 
 void on_io_error(boost::system::error_code const & error) {
 	std::cout << "Read error: " << error.message() << "\n";
@@ -39,7 +39,7 @@ void on_io_error(boost::system::error_code const & error) {
 void on_read_reply(modbus::tcp_mbap const & header, modbus::response::read_holding_registers const & response, boost::system::error_code const & error ) {
 	(void) header;
 
-	std::cout << "Multiple registers (error " << error.message() << ")\n";
+	std::cout << "Read multiple registers (message " << error.message() << ")\n";
 	for (std::size_t i = 0; i < response.values.size(); ++i) {
 		std::cout << "\t" << " " << response.values[i] << "\n";
 	}
@@ -54,26 +54,35 @@ void on_write_reply(modbus::tcp_mbap const & header, modbus::response::write_mul
 
 
 void on_connect(boost::system::error_code const & error) {
-	std::cout << "Connected (error " << error.message() << ").\n";
-	client->write_multiple_registers(0, 128, {1234, 4321, 1, 2, 3, 4, 5, 6, 7, 8}, on_write_reply);
+	std::cout << "Connect (message " << error.message() << ").\n";
+	if (!error)
+		client->write_multiple_registers(0, 128, {1234, 4321, 1, 2, 3, 4, 5, 6, 7, 8}, on_write_reply);
 }
 
-int main(int argc, char * * argv) {
+int main(int argc, char* argv[]) {
 	std::string hostname = "localhost";
-	if (argc < 2) {
+	if (argc > 1) {
 		hostname = argv[1];
 	}
 
 	boost::asio::io_service ios;
 
 	modbus::client client{ios};
+
 	auto handler = boost::make_shared<modbus::default_handler>();
-	modbus::server<modbus::default_handler> server{ios, handler};
+	modbus::server<modbus::default_handler> server{ios, handler, 502};
 	client.on_io_error = on_io_error;
 	::client = &client;
-	::server = &server;
 
-	client.connect(hostname, "502", on_connect);
+	client.connect(hostname, 502, on_connect);
+
+	boost::asio::deadline_timer stopper(ios, boost::posix_time::seconds(2));
+	stopper.async_wait(
+			[&client, &server](const boost::system::error_code&) {
+				client.close();
+				server.stop();
+			}
+	);
 
 	ios.run();
 }

@@ -23,6 +23,7 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <functional>
+#include <iostream>
 
 #include <boost/asio/connect.hpp>
 #include <boost/asio/read.hpp>
@@ -109,12 +110,13 @@ void client::send_message(
 
 /// Construct a client.
 client::client(boost::asio::io_service & ios) : strand(ios), socket(ios), resolver(ios) {
-	_connected = false;
+	connected_ = false;
 }
 
 /// Connect to a server.
-void client::connect(std::string const & hostname, std::string const & port, std::function<void(boost::system::error_code const &)> callback) {
-	tcp::resolver::query query(hostname, port);
+void client::connect(std::string const & hostname, int const & port, std::function<void(boost::system::error_code const &)> callback) {
+	std::string ports = std::to_string(port);
+	tcp::resolver::query query(hostname, ports);
 
 	auto handler = strand.wrap(std::bind(&client::on_resolve, this, std::placeholders::_1, std::placeholders::_2, callback));
 	resolver.async_resolve(query, handler);
@@ -130,8 +132,8 @@ void client::close() {
 	boost::system::error_code error;
 	resolver.cancel();
 	socket.shutdown(tcp::socket::shutdown_both, error);
+	connected_ = false;
 	socket.close(error);
-	_connected = false;
 }
 
 /// Reset the client.
@@ -143,7 +145,7 @@ void client::reset() {
 
 	// Old socket may hold now invalid file descriptor.
 	socket = boost::asio::ip::tcp::socket(ios());
-	_connected = false;
+	connected_ = false;
 }
 
 /// Read a number of coils from the connected server.
@@ -207,7 +209,7 @@ void client::on_connect(boost::system::error_code const & error, tcp::resolver::
 
 	// Start read loop if no error occured.
 	if (!error) {
-		_connected = true;
+		connected_ = true;
 		auto handler = strand.wrap(std::bind(&client::on_read, this, std::placeholders::_1, std::placeholders::_2));
 		socket.async_read_some(read_buffer.prepare(1024), handler);
 	}
@@ -215,7 +217,10 @@ void client::on_connect(boost::system::error_code const & error, tcp::resolver::
 
 /// Called when the socket finished a read operation.
 void client::on_read(boost::system::error_code const & error, size_t bytes_transferred) {
+	if (!connected_)
+	    return;
 	if (error) {
+	    std::cout << "on_read" << std::endl;
 		if (on_io_error) on_io_error(error);
 		return;
 	}
@@ -233,6 +238,7 @@ void client::on_read(boost::system::error_code const & error, size_t bytes_trans
 /// Called when the socket finished a write operation.
 void client::on_write(boost::system::error_code const & error, size_t bytes_transferred) {
 	if (error) {
+	    std::cout << "on_write" << std::endl;
 		if (on_io_error) on_io_error(error);
 		writing.clear();
 		return;
@@ -269,6 +275,7 @@ bool client::process_message() {
 	// Handle deserialization errors in TCP MBAP.
 	// Cant send an error to a specific transaction and can't continue to read from the connection.
 	if (error) {
+	    std::cout << "process_message" << std::endl;
 		if (on_io_error) on_io_error(error);
 		close();
 		return false;
@@ -305,3 +312,5 @@ void client::flush_write_buffer() {
 
 
 }
+
+// vim: autoindent syntax=cpp noexpandtab tabstop=4 softtabstop=4 shiftwidth=4

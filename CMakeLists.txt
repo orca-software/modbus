@@ -26,6 +26,10 @@ add_executable(${PROJECT_NAME}_test_client
 	src/test.cpp
 )
 
+set_target_properties(${PROJECT_NAME}_test_client PROPERTIES
+  COMPILE_FLAGS "-ggdb -Wall -pedantic"
+)
+
 target_link_libraries(${PROJECT_NAME}
 	${Boost_LIBRARIES}
 	Threads::Threads
