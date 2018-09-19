@@ -24,7 +24,7 @@
 
 #pragma once
 #include "deserialize_base.hpp"
-#include "tcp.hpp"
+#include <modbus/tcp.hpp>
 
 namespace modbus {
 namespace impl {

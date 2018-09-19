@@ -27,8 +27,8 @@
 #include <boost/make_shared.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 
-#include "client.hpp"
-#include "server.hpp"
+#include <modbus/client.hpp>
+#include <modbus/server.hpp>
 
 modbus::client * client;
 

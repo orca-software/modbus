@@ -23,7 +23,7 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <string>
-#include "error.hpp"
+#include <modbus/error.hpp>
 
 namespace modbus {
 

@@ -29,7 +29,7 @@
 
 #include <boost/system/error_code.hpp>
 
-#include "error.hpp"
+#include <modbus/error.hpp>
 
 namespace modbus {
 namespace impl {

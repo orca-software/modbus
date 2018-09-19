@@ -11,7 +11,7 @@ find_package(Boost REQUIRED COMPONENTS system thread coroutine)
 set(CMAKE_THREAD_PREFER_PTHREAD ON)
 find_package(Threads)
 
-include_directories(include/${PROJECT_NAME})
+include_directories(include)
 include_directories(SYSTEM
 	${Boost_INCLUDE_DIRS}
 )

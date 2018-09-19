@@ -28,7 +28,7 @@
 #include <boost/asio/write.hpp>
 #include <boost/system/system_error.hpp>
 
-#include "server.hpp"
+#include <modbus/server.hpp>
 #include "impl/serialize.hpp"
 #include "impl/deserialize.hpp"
 

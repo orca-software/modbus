@@ -25,7 +25,7 @@
 #pragma once
 
 #include "serialize_base.hpp"
-#include "request.hpp"
+#include <modbus/request.hpp>
 
 namespace modbus {
 namespace impl {

@@ -30,7 +30,7 @@
 #include <boost/asio/write.hpp>
 #include <boost/system/system_error.hpp>
 
-#include "client.hpp"
+#include <modbus/client.hpp>
 #include "impl/serialize.hpp"
 #include "impl/deserialize.hpp"
 
