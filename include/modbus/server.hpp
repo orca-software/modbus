@@ -107,21 +107,22 @@ private:
 		}
 		read_buffer.consume(header.size());
 		if (header.length < 2) {
-			write_error(header, errc::illegal_function, yield);
+			write_error(header, 0, errc::illegal_function, yield);
 			return;
 		}
 		size_t data_size = static_cast<size_t>(header.length - 1);
 
 		if (read_buffer.size() >= data_size) {
+		    uint8_t function = *data;
 			try {
 				handle_data(header, data, data_size, yield);
 			}
 			catch (modbus_exception& e) {
-				write_error(header, e.get_error(), yield);
+				write_error(header, function, e.get_error(), yield);
 			}
 		}
 		else {
-			write_error(header, errc::illegal_data_value, yield);
+			write_error(header, 0, errc::illegal_data_value, yield);
 		}
 		read_buffer.consume(data_size);
 	}
@@ -166,6 +167,7 @@ private:
 	template <typename Request>
 	void handle_request(std::ostreambuf_iterator<char>& out, tcp_mbap header,  const uint8_t* data, size_t data_size) {
 		Request req;
+		impl::deserialize(data, data_size, req);
 		typename Request::response resp = handler_->handle(req);
 		header.length = resp.length() + 1;
 		impl::serialize(out, header);
@@ -173,7 +175,14 @@ private:
 	}
 
 
-	void write_error(tcp_mbap header, errc::errc_t error, asio::yield_context yield) {
+	void write_error(tcp_mbap header, uint8_t function, errc::errc_t error, asio::yield_context yield) {
+		asio::streambuf write_buffer;
+		auto out = std::ostreambuf_iterator<char>(&write_buffer);
+		header.length = 3;
+		impl::serialize(out, header);
+		impl::serialize_be8(out, function | 0X80);
+		impl::serialize_be8(out, static_cast<uint8_t>(error));
+		asio::async_write(socket_, write_buffer, yield);
 	}
 
 };
@@ -224,6 +233,7 @@ struct default_handler {
 		coils_[req.address] = req.value;
 		resp.address = req.address;
 		resp.value = req.value;
+		return resp;
 	}
 
 	response::write_single_register handle(const request::write_single_register& req) {
@@ -231,6 +241,7 @@ struct default_handler {
 		registers_[req.address] = req.value;
 		resp.address = req.address;
 		resp.value = req.value;
+		return resp;
 	}
 
 	response::write_multiple_coils handle(const request::write_multiple_coils& req) {

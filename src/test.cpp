@@ -59,21 +59,19 @@ void on_connect(boost::system::error_code const & error) {
 }
 
 int main(int argc, char * * argv) {
+	std::string hostname = "localhost";
 	if (argc < 2) {
-		std::cout << "Usage: " << argv[0] << " <hostname>\n";
-		return -1;
+		hostname = argv[1];
 	}
 
 	boost::asio::io_service ios;
 
-	std::string hostname = argv[1];
-
 	modbus::client client{ios};
-    auto handler = boost::make_shared<modbus::default_handler>();
-    modbus::server<modbus::default_handler> server{ios, handler};
+	auto handler = boost::make_shared<modbus::default_handler>();
+	modbus::server<modbus::default_handler> server{ios, handler};
 	client.on_io_error = on_io_error;
 	::client = &client;
-    ::server = &server;
+	::server = &server;
 
 	client.connect(hostname, "502", on_connect);
 
