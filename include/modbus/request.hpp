@@ -23,6 +23,9 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
+#ifndef MODBUS_REQUEST_H_
+#define MODBUS_REQUEST_H_
+
 #include <cstdint>
 #include <vector>
 
@@ -62,7 +65,7 @@ namespace request {
 		/// The number of registers/coils to read.
 		std::uint16_t count;
 
-		/// The length of the serialized ADU in bytes.
+		/// The length of the serialized PDU in bytes.
 		std::size_t length() const {
 			return 5;
 		}
@@ -82,7 +85,7 @@ namespace request {
 		/// The number of registers/coils to read.
 		std::uint16_t count;
 
-		/// The length of the serialized ADU in bytes.
+		/// The length of the serialized PDU in bytes.
 		std::size_t length() const {
 			return 5;
 		}
@@ -102,7 +105,7 @@ namespace request {
 		/// The number of registers/coils to read.
 		std::uint16_t count;
 
-		/// The length of the serialized ADU in bytes.
+		/// The length of the serialized PDU in bytes.
 		std::size_t length() const {
 			return 5;
 		}
@@ -122,7 +125,7 @@ namespace request {
 		/// The number of registers/coils to read.
 		std::uint16_t count;
 
-		/// The length of the serialized ADU in bytes.
+		/// The length of the serialized PDU in bytes.
 		std::size_t length() const {
 			return 5;
 		}
@@ -142,7 +145,7 @@ namespace request {
 		/// The value to write.
 		bool value;
 
-		/// The length of the serialized ADU in bytes.
+		/// The length of the serialized PDU in bytes.
 		std::size_t length() const {
 			return 5;
 		}
@@ -162,7 +165,7 @@ namespace request {
 		/// The value to write.
 		std::uint16_t value;
 
-		/// The length of the serialized ADU in bytes.
+		/// The length of the serialized PDU in bytes.
 		std::size_t length() const {
 			return 5;
 		}
@@ -182,7 +185,7 @@ namespace request {
 		/// The values to write.
 		std::vector<bool> values;
 
-		/// The length of the serialized ADU in bytes.
+		/// The length of the serialized PDU in bytes.
 		std::size_t length() const {
 			return 6 + (values.size() + 7) / 8;
 		}
@@ -202,7 +205,7 @@ namespace request {
 		/// The values to write.
 		std::vector<std::uint16_t> values;
 
-		/// The length of the serialized ADU in bytes.
+		/// The length of the serialized PDU in bytes.
 		std::size_t length() const {
 			return 6 + values.size() * 2;
 		}
@@ -225,7 +228,7 @@ namespace request {
 		/// The mask to OR the register value with.
 		std::uint16_t or_mask;
 
-		/// The length of the serialized ADU in bytes.
+		/// The length of the serialized PDU in bytes.
 		std::size_t length() const {
 			return 7;
 		}
@@ -233,4 +236,5 @@ namespace request {
 
 }}
 
-// vim: autoindent syntax=cpp noexpandtab tabstop=4 softtabstop=4 shiftwidth=4
+#endif
+// vim: autoindent syntax=cpp expandtab tabstop=2 softtabstop=2 shiftwidth=2

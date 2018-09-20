@@ -23,6 +23,9 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
+#ifndef MODBUS_RESPONSE_H_
+#define MODBUS_RESPONSE_H_
+
 #include <cstdint>
 #include <vector>
 
@@ -55,7 +58,7 @@ namespace response {
 		/// The read values.
 		std::vector<bool> values;
 
-		/// The length of the serialized ADU in bytes.
+		/// The length of the serialized PDU in bytes.
 		std::size_t length() const {
 			return 2 + (values.size() + 7) / 8;
 		}
@@ -72,7 +75,7 @@ namespace response {
 		/// The read values.
 		std::vector<bool> values;
 
-		/// The length of the serialized ADU in bytes.
+		/// The length of the serialized PDU in bytes.
 		std::size_t length() const {
 			return 2 + (values.size() + 7) / 8;
 		}
@@ -89,7 +92,7 @@ namespace response {
 		/// The read values.
 		std::vector<std::uint16_t> values;
 
-		/// The length of the serialized ADU in bytes.
+		/// The length of the serialized PDU in bytes.
 		std::size_t length() const {
 			return 2 + values.size() * 2;
 		}
@@ -106,7 +109,7 @@ namespace response {
 		/// The read values.
 		std::vector<std::uint16_t> values;
 
-		/// The length of the serialized ADU in bytes.
+		/// The length of the serialized PDU in bytes.
 		std::size_t length() const {
 			return 2 + values.size() * 2;
 		}
@@ -126,7 +129,7 @@ namespace response {
 		/// The value written to the coil.
 		bool value;
 
-		/// The length of the serialized ADU in bytes.
+		/// The length of the serialized PDU in bytes.
 		std::size_t length() const {
 			return 5;
 		}
@@ -146,7 +149,7 @@ namespace response {
 		/// The value written to the register.
 		std::uint16_t value;
 
-		/// The length of the serialized ADU in bytes.
+		/// The length of the serialized PDU in bytes.
 		std::size_t length() const {
 			return 5;
 		}
@@ -166,7 +169,7 @@ namespace response {
 		/// The number of coils written to.
 		std::uint16_t count;
 
-		/// The length of the serialized ADU in bytes.
+		/// The length of the serialized PDU in bytes.
 		std::size_t length() const {
 			return 5;
 		}
@@ -186,7 +189,7 @@ namespace response {
 		/// The number of registers written to.
 		std::uint16_t count;
 
-		/// The length of the serialized ADU in bytes.
+		/// The length of the serialized PDU in bytes.
 		std::size_t length() const {
 			return 5;
 		}
@@ -209,10 +212,13 @@ namespace response {
 		/// The OR mask used.
 		std::uint16_t or_mask;
 
-		/// The length of the serialized ADU in bytes.
+		/// The length of the serialized PDU in bytes.
 		std::size_t length() const {
 			return 7;
 		}
 	};
 
 }}
+
+#endif
+// vim: autoindent syntax=cpp expandtab tabstop=2 softtabstop=2 shiftwidth=2

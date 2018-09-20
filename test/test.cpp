@@ -30,7 +30,7 @@
 #include <modbus/client.hpp>
 #include <modbus/server.hpp>
 
-modbus::client * client;
+modbus::Client * client;
 
 void on_io_error(boost::system::error_code const & error) {
 	std::cout << "Read error: " << error.message() << "\n";
@@ -67,14 +67,15 @@ int main(int argc, char* argv[]) {
 
 	boost::asio::io_service ios;
 
-	modbus::client client{ios};
+	modbus::Client client{ios};
 
-	auto handler = boost::make_shared<modbus::default_handler>();
-	modbus::server<modbus::default_handler> server{ios, handler, 502};
+	auto handler = boost::make_shared<modbus::Default_handler>();
+	// Use non-standard 1502 (instead of 502) port to avoid having to use sudo for testing
+	modbus::Server<modbus::Default_handler> server{ios, handler, 1502};
 	client.on_io_error = on_io_error;
 	::client = &client;
 
-	client.connect(hostname, 502, on_connect);
+	client.connect(hostname, 1502, on_connect);
 
 	boost::asio::deadline_timer stopper(ios, boost::posix_time::seconds(2));
 	stopper.async_wait(

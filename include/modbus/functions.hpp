@@ -23,6 +23,8 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
+#ifndef MODBUS_FUNCTIONS_H_
+#define MODBUS_FUNCTIONS_H_
 
 #include <cstdint>
 
@@ -51,4 +53,7 @@ struct functions {
 	};
 };
 
-}
+}  // namespace modbus
+
+#endif
+// vim: autoindent syntax=cpp expandtab tabstop=2 softtabstop=2 shiftwidth=2

@@ -23,6 +23,9 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
+#ifndef MODBUS_TCP_H_
+#define MODBUS_TCP_H_
+
 #include <cstdint>
 #include <utility>
 
@@ -66,4 +69,8 @@ struct tcp_pdu : tcp_mbap, T {
 	/// Construct a Modbus/TCP PDU from an MBAP header and an ADU.
 	tcp_pdu(tcp_mbap const & mbap, T && adu) : tcp_mbap(mbap), T(std::move(adu)) {}
 };
+
 }
+
+#endif
+// vim: autoindent syntax=cpp expandtab tabstop=2 softtabstop=2 shiftwidth=2

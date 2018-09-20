@@ -1,3 +1,4 @@
+// Copyright (c) 2018, J.R. Versteegh <j.r.versteegh@orca-st.com>
 // Copyright (c) 2017, Fizyr (https://fizyr.com)
 //
 // Redistribution and use in source and binary forms, with or without
@@ -23,263 +24,445 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
+#ifndef MODBUS_CLIENT_H_
+#define MODBUS_CLIENT_H_
 
 #include <atomic>
 #include <cstdint>
 #include <functional>
 #include <string>
 
-#include <boost/asio/io_service.hpp>
-#include <boost/asio/strand.hpp>
-#include <boost/asio/ip/tcp.hpp>
-#include <boost/asio/streambuf.hpp>
+#include <boost/asio.hpp>
 
 #include "functions.hpp"
 #include "tcp.hpp"
 #include "request.hpp"
 #include "response.hpp"
+#include "impl/serialize.hpp"
+#include "impl/deserialize.hpp"
 
 namespace modbus {
 
+namespace asio = boost::asio;
 
-/// A connection to a Modbus server.
-class client  {
-public:
-	typedef boost::asio::ip::tcp tcp;
+struct Client  {
+  typedef asio::ip::tcp tcp;
 
-	/// Callback type.
-	template<typename T>
-	using Callback = std::function<void (tcp_mbap const & header, T const & response, boost::system::error_code const &)>;
+  template<typename T>
+    using Callback = std::function<void (tcp_mbap const & header, T const & response, boost::system::error_code const &)>;
 
-	/// Callback to invoke for IO errors that cants be linked to a specific transaction.
-	/**
-	 * Additionally the connection will be closed and every transaction callback will be called with an EOF error.
-	 */
-	std::function<void (boost::system::error_code const &)> on_io_error;
+  /// Callback to invoke for IO errors that cants be linked to a specific transaction.
+  /**
+   * Additionally the connection will be closed and every transaction callback will be called with an EOF error.
+   */
+  std::function<void (boost::system::error_code const &)> on_io_error;
 
-protected:
-	/// Low level message handler.
-	using Handler = std::function<std::uint8_t const * (std::uint8_t const * start, std::size_t size, tcp_mbap const & header, boost::system::error_code error)>;
+  Client(asio::io_service & ios): strand(ios), socket(ios), resolver(ios), connected_(false) {}
 
-	/// Struct to hold transaction details.
-	struct transaction_t {
-		std::uint8_t function;
-		Handler handler;
-	};
+  asio::io_service& ios() { 
+    return socket.get_io_service(); 
+  };
 
-	/// Strand to use to prevent concurrent handler execution.
-	boost::asio::io_service::strand strand;
+  void connect(
+      std::string const & hostname,
+      int const & port,
+      std::function<void(boost::system::error_code const &)> callback) {
+    std::string ports = std::to_string(port);
+    tcp::resolver::query query(hostname, ports);
 
-	/// The socket to use.
-	tcp::socket socket;
+    auto handler = strand.wrap(std::bind(&Client::on_resolve, this, std::placeholders::_1, std::placeholders::_2, callback));
+    resolver.async_resolve(query, handler);
+  }
 
-	/// The resolver to use.
-	tcp::resolver resolver;
 
-	/// Buffer for read operations.
-	boost::asio::streambuf read_buffer;
+  /// Connect to a server at the default Modbus port 502.
+  void connect(
+      std::string const & hostname,
+      std::function<void(boost::system::error_code const &)> callback) {
+    connect(hostname, 502, callback);
+  }
 
-	/// Buffer for write operations.
-	boost::asio::streambuf write_buffer;
+  /// Disconnect from the server.
+  /**
+   * Any remaining transaction callbacks will be invoked with an EOF error.
+   */
+  void close() {
+    // Call all remaining transaction handlers with operation_aborted, then clear transactions.
+    for (auto & transaction : transactions) 
+      transaction.second.handler(nullptr, 0, {}, asio::error::operation_aborted);
+    transactions.clear();
 
-	/// Output iterator for write buffer.
-	std::ostreambuf_iterator<char> output_iterator{&write_buffer};
+    // Shutdown and close socket.
+    boost::system::error_code error;
+    resolver.cancel();
+    socket.shutdown(tcp::socket::shutdown_both, error);
+    connected_ = false;
+    socket.close(error);
+  }
 
-	/// Transaction table to keep track of open transactions.
-	std::map<int, transaction_t> transactions;
+  /// Reset the client.
+  /**
+   * Should be called before re-opening a connection after a previous connection was closed.
+   */
+  void reset() {
+    // Clear buffers.
+    read_buffer.consume(read_buffer.size());
+    write_buffer.consume(write_buffer.size());
 
-	/// Next transaction ID.
-	std::uint16_t next_id = 0;
+    // Old socket may hold now invalid file descriptor.
+    socket = asio::ip::tcp::socket(ios());
+    connected_ = false;
+  }
 
-	/// Indicates if a message is currently being written.
-	/**
-	 * During this time, new messages will be buffered instead.
-	 * Only the latest message gets buffered, all older messages are discarded.
-	 */
-	std::atomic_flag writing{false};
 
-	/// Track connected state of client.
-	bool connected_;
+  /// Check if the connection to the server is open.
+  /**
+   * \return True if the connection to the server is open.
+   */
+  bool is_open() {
+    return socket.is_open();
+  }
 
-public:
-	/// Construct a client.
-	client(
-		boost::asio::io_service & ios ///< The IO service to use.
-	);
+  /// Check if the client is connected.
+  bool is_connected() {
+    return is_open() && connected_;
+  }
 
-	/// Get the IO service used by the client.
-	boost::asio::io_service & ios() { return socket.get_io_service(); };
+  /// Read a number of coils from the connected server.
+  void read_coils(
+      std::uint8_t unit,
+      std::uint16_t address,
+      std::uint16_t count,
+      Callback<response::read_coils> const & callback) {
+    send_message(unit, request::read_coils{address, count}, callback);
+  }
 
-	/// Connect to a server.
-	void connect(
-		std::string const & hostname,                                   ///< The IP address or host name of the server.
-		int const & port,                                       ///< The port to connect to.
-		std::function<void(boost::system::error_code const &)> callback ///< The callback to invoke when the connection is established, or when an error occurs.
-	);
+  /// Read a number of discrete inputs from the connected server.
+  void read_discrete_inputs(
+      std::uint8_t unit,
+      std::uint16_t address,
+      std::uint16_t count,
+      Callback<response::read_discrete_inputs> const & callback) {
+    send_message(unit, request::read_discrete_inputs{address, count}, callback);
+  }
 
-	/// Connect to a server at the default Modbus port 502.
-	void connect(
-		std::string const & hostname,                                   ///< The IP address or host name of the server.
-		std::function<void(boost::system::error_code const &)> callback ///< The callback to invoke when the connection is established, or when an error occurs.
-	) {
-		connect(hostname, 502, callback);
-	}
 
-	/// Disconnect from the server.
-	/**
-	 * Any remaining transaction callbacks will be invoked with an EOF error.
-	 */
-	void close();
+  /// Read a number of holding registers from the connected server.
+  void read_holding_registers(
+      std::uint8_t unit,
+      std::uint16_t address,
+      std::uint16_t count,
+      Callback<response::read_holding_registers> const & callback) {
+    send_message(unit, request::read_holding_registers{address, count}, callback);
+  }
 
-	/// Reset the client.
-	/**
-	 * Should be called before re-opening a connection after a previous connection was closed.
-	 */
-	void reset();
 
-	/// Check if the connection to the server is open.
-	/**
-	 * \return True if the connection to the server is open.
-	 */
-	bool is_open() {
-		return socket.is_open();
-	}
+  /// Read a number of input registers from the connected server.
+  void read_input_registers(
+      std::uint8_t unit,
+      std::uint16_t address,
+      std::uint16_t count,
+      Callback<response::read_input_registers> const & callback) {
+    send_message(unit, request::read_input_registers{address, count}, callback);
+  }
 
-	/// Check if the client is connected.
-	bool is_connected() {
-		return is_open() && connected_;
-	}
 
-	/// Read a number of coils from the connected server.
-	void read_coils(
-		std::uint8_t unit,                                              ///< The Modbus TCP unit to send the command to.
-		std::uint16_t address,                                          ///< The address of the first coil to read.
-		std::uint16_t count,                                            ///< The number of coils to read.
-		Callback<response::read_coils> const & callback                 ///< The callback to invoke when the reply or error arrives.
-	);
+  /// Write to a single coil on the connected server.
+  void write_single_coil(
+      std::uint8_t unit,
+      std::uint16_t address,
+      bool value,          
+      Callback<response::write_single_coil> const & callback) {
+    send_message(unit, request::write_single_coil{address, value}, callback);
+  }
 
-	/// Read a number of discrete inputs from the connected server.
-	void read_discrete_inputs(
-		std::uint8_t unit,                                              ///< The Modbus TCP unit to send the command to.
-		std::uint16_t address,                                          ///< The address of the first coil to read.
-		std::uint16_t count,                                            ///< The number of inputs to read.
-		Callback<response::read_discrete_inputs> const & callback       ///< The callback to invoke when the reply or error arrives.
-	);
 
-	/// Read a number of holding registers from the connected server.
-	void read_holding_registers(
-		std::uint8_t unit,                                              ///< The Modbus TCP unit to send the command to.
-		std::uint16_t address,                                          ///< The address of the first coil to read.
-		std::uint16_t count,                                            ///< The number of registers to read.
-		Callback<response::read_holding_registers> const & callback     ///< The callback to invoke when the reply or error arrives.
-	);
+  /// Write to a single register on the connected server.
+  void write_single_register(
+      std::uint8_t unit,
+      std::uint16_t address,
+      std::uint16_t value,
+      Callback<response::write_single_register> const & callback) {
+    send_message(unit, request::write_single_register{address, value}, callback);
+  }
 
-	/// Read a number of input registers from the connected server.
-	void read_input_registers(
-		std::uint8_t unit,                                              ///< The Modbus TCP unit to send the command to.
-		std::uint16_t address,                                          ///< The address of the first coil to read.
-		std::uint16_t count,                                            ///< The number of registers to read.
-		Callback<response::read_input_registers> const & callback       ///< The callback to invoke when the reply or error arrives.
-	);
 
-	/// Write to a single coil on the connected server.
-	void write_single_coil(
-		std::uint8_t unit,                                              ///< The Modbus TCP unit to send the command to.
-		std::uint16_t address,                                          ///< The address of the coil.
-		bool value,                                                     ///< The value to write.
-		Callback<response::write_single_coil> const & callback          ///< The callback to invoke when the reply or error arrives.
-	);
+  /// Write to a number of coils on the connected server.
+  void write_multiple_coils(
+      std::uint8_t unit,
+      std::uint16_t address,      
+      std::vector<bool> values,      
+      Callback<response::write_multiple_coils> const & callback) {
+    send_message(unit, request::write_multiple_coils{address, values}, callback);
+  }
 
-	/// Write to a single register on the connected server.
-	void write_single_register(
-		std::uint8_t unit,                                              ///< The Modbus TCP unit to send the command to.
-		std::uint16_t address,                                          ///< The address of the register.
-		std::uint16_t value,                                            ///< The value to write.
-		Callback<response::write_single_register> const & callback      ///< The callback to invoke when the reply or error arrives.
-	);
 
-	/// Write to a number of coils on the connected server.
-	void write_multiple_coils(
-		std::uint8_t unit,                                              ///< The Modbus TCP unit to send the command to.
-		std::uint16_t address,                                          ///< The address of the first coil to write.
-		std::vector<bool> values,                                       ///< The values to write.
-		Callback<response::write_multiple_coils> const & callback       ///< The callback to invoke when the reply or error arrives.
-	);
+  /// Write to a number of registers on the connected server.
+  void write_multiple_registers(
+      std::uint8_t unit,
+      std::uint16_t address,
+      std::vector<std::uint16_t> values,
+      Callback<response::write_multiple_registers> const & callback) {
+    send_message(unit, request::write_multiple_registers{address, values}, callback);
+  }
 
-	/// Write to a number of registers on the connected server.
-	void write_multiple_registers(
-		std::uint8_t unit,                                              ///< The Modbus TCP unit to send the command to.
-		std::uint16_t address,                                          ///< The address of the first register to write.
-		std::vector<std::uint16_t> values,                              ///< The values to write.
-		Callback<response::write_multiple_registers> const & callback   ///< The callback to invoke when the reply or error arrives.
-	);
 
-	/// Perform a masked write to a register on the connected server.
-	/**
-	 * Compliant servers will set the value of the register to:
-	 * ((old_value AND and_mask) OR (or_mask AND NOT and_MASK))
-	 */
-	void mask_write_register(
-		std::uint8_t unit,                                         ///< The Modbus TCP unit to send the command to.
-		std::uint16_t address,                                     ///< The address of the first register to write.
-		std::uint16_t and_mask,                                    ///< The AND mask to apply.
-		std::uint16_t or_mask,                                     ///< The OR mask to apply.
-		Callback<response::mask_write_register> const & callback   ///< The callback to invoke when the reply or error arrives.
-	);
+  /// Perform a masked write to a register on the connected server.
+  /**
+   * Compliant servers will set the value of the register to:
+   * ((old_value AND and_mask) OR (or_mask AND NOT and_MASK))
+   */
+  void mask_write_register(
+      std::uint8_t unit,
+      std::uint16_t address,
+      std::uint16_t and_mask,
+      std::uint16_t or_mask,
+      Callback<response::mask_write_register> const & callback) {
+    send_message(unit, request::mask_write_register{address, and_mask, or_mask}, callback);
+  }
+
 
 protected:
-	/// Called when the resolver finished resolving a hostname.
-	void on_resolve(
-		boost::system::error_code const & error,                        ///<[in] The error that occured, if any.
-		tcp::resolver::iterator iterator,                               ///<[in] The iterator to the first endpoint found by the resolver.
-		std::function<void(boost::system::error_code const &)> callback ///<[in] User callback to invoke whent the connection succeeded.
-	);
+  /// Low level message handler.
+  using Handler = std::function<std::uint8_t const * (
+      std::uint8_t const * start, 
+      std::size_t size, tcp_mbap 
+      const & header, 
+      boost::system::error_code error)>;
 
-	/// Called when the socket finished connecting.
-	void on_connect(
-		boost::system::error_code const & error,                        ///<[in] The error that occured, if any.
-		tcp::resolver::iterator iterator,                               ///<[in] The iterator to the first endpoint found by the resolver.
-		std::function<void(boost::system::error_code const &)> callback ///<[in] User callback to invoke whent the connection succeeded.
-	);
-
-	/// Called when the socket finished a read operation.
-	void on_read(
-		boost::system::error_code const & error, ///<[in] The error that occured, if any.
-		std::size_t bytes_transferred            ///<[in] The amount of bytes read from the socket.
-	);
-
-	/// Called when the socket finished a write operation.
-	void on_write(
-		boost::system::error_code const & error, ///<[in] The error that occured, if any.
-		std::size_t bytes_transferred            ///<[in] The amount of bytes read from the socket.
-	);
-
-	/// Allocate a transaction in the transaction table.
-	std::uint16_t allocate_transaction(std::uint8_t function, Handler handler);
-
-	/// Parse and process a message from the read buffer.
-	/**
-	 * \return True if a message was parsed succesfully, false if there was not enough data.
-	 */
-	bool process_message();
-
-	/// Flush the write buffer.
-	void flush_write_buffer_();
-
-	/// Flush the write buffer.
-	/**
-	 * Does nothing if a write operation is still busy.
-	 * The buffer will be automatically flushed when when the write operation finishes.
-	 */
-	void flush_write_buffer();
-
-	/// Send a Modbus request to the server.
+	// Make a handler that deserializes a messages and passes it to the user callback.
 	template<typename T>
-	void send_message(
-		std::uint8_t unit,                       ///< The unit identifier of the target device.
-		T const & request,                       ///< The application data unit of the request.
-		Callback<typename T::response> callback  ///< The callback to invoke when the reply arrives.
-	);
+  Handler make_handler(Client::Callback<T>&& callback) {
+		return [callback] (
+        std::uint8_t const * start, 
+        std::size_t length, 
+        tcp_mbap const & header, 
+        boost::system::error_code error) {
+			T response;
+			std::uint8_t const * current = start;
+			std::uint8_t const * end = start + length;
+
+			// Pass errors to callback.
+			if (error) {
+				callback(header, response, error);
+				return current;
+			}
+
+			// Make sure the message contains atleast a function code.
+			if (length < 1) {
+				callback(header, response, modbus_error(errc::message_size_mismatch));
+				return current;
+			}
+
+			// Function codes 128 and above are exception responses.
+			if (*current >= 128) {
+				callback(header, response, modbus_error(length >= 2 ? errc_t(start[1]) : errc::message_size_mismatch));
+				return current;
+			}
+
+			// Try to deserialize the PDU.
+			current = impl::deserialize(current, end - current, response, error);
+			if (error) {
+				callback(header, response, error);
+				return current;
+			}
+
+			// Check response length consistency.
+			// Length from the MBAP header includes the unit ID (1 byte) which is part of the MBAP header, not the response PDU.
+			if (current - start != header.length - 1) {
+				callback(header, response, modbus_error(errc::message_size_mismatch));
+				return current;
+			}
+
+			callback(header, response, error);
+			return current;
+		};
+	}
+
+  /// Struct to hold transaction details.
+  struct transaction_t {
+    std::uint8_t function;
+    Handler handler;
+  };
+
+  /// Strand to use to prevent concurrent handler execution.
+  asio::io_service::strand strand;
+
+  /// The socket to use.
+  tcp::socket socket;
+
+  /// The resolver to use.
+  tcp::resolver resolver;
+
+  /// Buffer for read operations.
+  asio::streambuf read_buffer;
+
+  /// Buffer for write operations.
+  asio::streambuf write_buffer;
+
+  /// Output iterator for write buffer.
+  std::ostreambuf_iterator<char> output_iterator{&write_buffer};
+
+  /// Transaction table to keep track of open transactions.
+  std::map<int, transaction_t> transactions;
+
+  /// Next transaction ID.
+  std::uint16_t next_id = 0;
+
+  /// Track connected state of client.
+  bool connected_;
+
+
+  /// Called when the resolver finished resolving a hostname.
+  void on_resolve(
+      boost::system::error_code const & error,
+      tcp::resolver::iterator iterator,
+      std::function<void(boost::system::error_code const &)> callback) {
+    if (error) return 
+      callback(error);
+
+    auto handler = strand.wrap(std::bind(&Client::on_connect, this, std::placeholders::_1, std::placeholders::_2, callback));
+    asio::async_connect(socket, iterator, handler);
+  }
+
+
+  /// Called when the socket finished connecting.
+  void on_connect(
+      boost::system::error_code const & error,
+      tcp::resolver::iterator iterator,
+      std::function<void(boost::system::error_code const &)> callback) {
+    (void) iterator;
+
+    if (callback) callback(error);
+
+    // Start read loop if no error occured.
+    if (!error) {
+      connected_ = true;
+      auto handler = strand.wrap(std::bind(&Client::on_read, this, std::placeholders::_1, std::placeholders::_2));
+      socket.async_read_some(read_buffer.prepare(1024), handler);
+    }
+  }
+
+
+  /// Called when the socket finished a read operation.
+  void on_read(
+      boost::system::error_code const & error,
+      std::size_t bytes_transferred) {
+    if (!connected_)
+      return;
+    if (error) {
+      std::cout << "on_read" << std::endl;
+      if (on_io_error) on_io_error(error);
+      return;
+    }
+
+    read_buffer.commit(bytes_transferred);
+
+    // Parse and process all complete messages in the buffer.
+    while (process_message());
+
+    // Read more data.
+    auto handler = strand.wrap(std::bind(&Client::on_read, this, std::placeholders::_1, std::placeholders::_2));
+    socket.async_read_some(read_buffer.prepare(1024), handler);
+  }
+
+
+  /// Called when the socket finished a write operation.
+  void on_write(
+      boost::system::error_code const & error,
+      std::size_t bytes_transferred) {
+    if (error) {
+      if (on_io_error) 
+        on_io_error(error);
+      return;
+    }
+
+    write_buffer.consume(bytes_transferred);
+
+    if (write_buffer.size()) {
+      flush_write_buffer();
+    }
+  }
+
+
+  /// Allocate a transaction in the transaction table.
+  std::uint16_t allocate_transaction(std::uint8_t function, Handler handler) {
+    std::uint16_t id = ++next_id;
+    transactions.insert({id, {function, handler}});
+    return id;
+  }
+
+
+  /// Parse and process a message from the read buffer.
+  /**
+   * \return True if a message was parsed succesfully, false if there was not enough data.
+   */
+  bool process_message() {
+    /// Modbus/TCP MBAP header is 7 bytes.
+    if (read_buffer.size() < 7) return false;
+
+    uint8_t const * data = asio::buffer_cast<uint8_t const *>(read_buffer.data());
+
+    boost::system::error_code error;
+    tcp_mbap header;
+
+    data = impl::deserialize(data, read_buffer.size(), header, error);
+
+    // Handle deserialization errors in TCP MBAP.
+    // Cant send an error to a specific transaction and can't continue to read from the connection.
+    if (error) {
+      if (on_io_error) on_io_error(error);
+      close();
+      return false;
+    }
+
+    // Ensure entire message is in buffer.
+    if (read_buffer.size() < std::size_t(6 + header.length)) return false;
+
+    auto transaction = transactions.find(header.transaction);
+    if (transaction == transactions.end()) {
+      // TODO: Transaction not found. Possibly call on_io_error?
+      return true;
+    }
+    data = transaction->second.handler(data, header.length - 1, header, boost::system::error_code());
+    transactions.erase(transaction);
+
+    // Remove read data and handled transaction.
+    read_buffer.consume(6 + header.length);
+
+    return true;
+  }
+
+  /// Flush the write buffer.
+  void flush_write_buffer() {
+    auto handler = strand.wrap(std::bind(&Client::on_write, this, std::placeholders::_1, std::placeholders::_2));
+    socket.async_write_some(write_buffer.data(), handler);
+  }
+
+  /// Send a Modbus request to the server.
+  template<typename T>
+    void send_message(
+        std::uint8_t unit,                          ///< The unit identifier of the target device.
+        T const & request,                          ///< The application data unit of the request.
+        Callback<typename T::response> callback) {  ///< The callback to invoke when the reply arrives.
+    strand.dispatch([this, unit, request, callback] () mutable {
+      auto handler = make_handler<typename T::response>(std::move(callback));
+
+      tcp_mbap header;
+      header.transaction = allocate_transaction(request.function, handler);
+      header.protocol    = 0;                    // 0 means Modbus.
+      header.length      = request.length() + 1; // Unit ID is also counted in length field.
+      header.unit        = unit;
+
+      auto out = std::ostreambuf_iterator<char>(&write_buffer);
+      impl::serialize(out, header);
+      impl::serialize(out, request);
+      flush_write_buffer();
+    });
+  }
 };
 
 }
+
+#endif
+// vim: autoindent syntax=cpp expandtab tabstop=2 softtabstop=2 shiftwidth=2
