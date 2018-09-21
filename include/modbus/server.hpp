@@ -265,9 +265,7 @@ struct Default_handler {
 
 	response::read_discrete_inputs handle(uint8_t unit_id, const request::read_discrete_inputs& req) {
 		response::read_discrete_inputs resp;
-		for (int i = 0; i < req.count; ++i) {
-			resp.values.push_back(false);
-		}
+    resp.values.resize(req.count);
 		return resp;
 	}
 
@@ -283,9 +281,7 @@ struct Default_handler {
 
 	response::read_input_registers handle(uint8_t unit_id, const request::read_input_registers& req) {
 		response::read_input_registers resp;
-		for (int i = 0; i < req.count; ++i) {
-			resp.values.push_back(0);
-		}
+    resp.values.resize(req.count);
 		return resp;
 	}
 
