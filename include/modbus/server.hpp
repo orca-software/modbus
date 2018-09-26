@@ -192,7 +192,7 @@ private:
 		Request req;
 		impl::deserialize(data, data_size, req);
 		typename Request::response resp = handler_->handle(header.unit, req);
-		header.length = resp.length() + 1;
+		header.length = static_cast<uint16_t>(resp.length() + 1);
 		impl::serialize(out, header);
 		impl::serialize(out, resp);
 	}

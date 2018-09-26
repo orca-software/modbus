@@ -112,7 +112,7 @@ namespace impl {
 		std::size_t written = 0;
 
 		// Serialize byte count and packed bits.
-		written += serialize_be8(out, (values.size() + 7) / 8);
+		written += serialize_be8(out, static_cast<uint8_t>((values.size() + 7) / 8));
 		written += serialize_bit_list(out, values);
 
 		return written;
@@ -151,7 +151,7 @@ namespace impl {
 		std::size_t written = 0;
 
 		// Serialize byte count and data.
-		written += serialize_be8(out, values.size() * 2);
+		written += serialize_be8(out, static_cast<uint8_t>(values.size() * 2));
 		for (auto value : values) written += serialize_be16(out, value);
 
 		return written;
