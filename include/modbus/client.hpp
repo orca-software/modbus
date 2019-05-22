@@ -57,11 +57,7 @@ struct Client  {
    */
   std::function<void (boost::system::error_code const &)> on_io_error;
 
-  Client(asio::io_service & ios): strand(ios), socket(ios), resolver(ios), connected_(false) {}
-
-  asio::io_service& ios() { 
-    return socket.get_io_service(); 
-  };
+  Client(asio::io_service & ios): strand(ios), socket(ios), resolver(ios), ios_(ios), connected_(false) {}
 
   void connect(
       std::string const & hostname,
@@ -110,7 +106,7 @@ struct Client  {
     write_buffer.consume(write_buffer.size());
 
     // Old socket may hold now invalid file descriptor.
-    socket = asio::ip::tcp::socket(ios());
+    socket = asio::ip::tcp::socket(ios_);
     connected_ = false;
   }
 
@@ -230,54 +226,54 @@ protected:
       const & header, 
       boost::system::error_code error)>;
 
-	// Make a handler that deserializes a messages and passes it to the user callback.
-	template<typename T>
+  // Make a handler that deserializes a messages and passes it to the user callback.
+  template<typename T>
   Handler make_handler(Client::Callback<T>&& callback) {
-		return [callback] (
+    return [callback] (
         std::uint8_t const * start, 
         std::size_t length, 
         tcp_mbap const & header, 
         boost::system::error_code error) {
-			T response;
-			std::uint8_t const * current = start;
-			std::uint8_t const * end = start + length;
+      T response;
+      std::uint8_t const * current = start;
+      std::uint8_t const * end = start + length;
 
-			// Pass errors to callback.
-			if (error) {
-				callback(header, response, error);
-				return current;
-			}
+      // Pass errors to callback.
+      if (error) {
+        callback(header, response, error);
+        return current;
+      }
 
-			// Make sure the message contains atleast a function code.
-			if (length < 1) {
-				callback(header, response, modbus_error(errc::message_size_mismatch));
-				return current;
-			}
+      // Make sure the message contains atleast a function code.
+      if (length < 1) {
+        callback(header, response, modbus_error(errc::message_size_mismatch));
+        return current;
+      }
 
-			// Function codes 128 and above are exception responses.
-			if (*current >= 128) {
-				callback(header, response, modbus_error(length >= 2 ? errc_t(start[1]) : errc::message_size_mismatch));
-				return current;
-			}
+      // Function codes 128 and above are exception responses.
+      if (*current >= 128) {
+        callback(header, response, modbus_error(length >= 2 ? errc_t(start[1]) : errc::message_size_mismatch));
+        return current;
+      }
 
-			// Try to deserialize the PDU.
-			current = impl::deserialize(current, end - current, response, error);
-			if (error) {
-				callback(header, response, error);
-				return current;
-			}
+      // Try to deserialize the PDU.
+      current = impl::deserialize(current, end - current, response, error);
+      if (error) {
+        callback(header, response, error);
+        return current;
+      }
 
-			// Check response length consistency.
-			// Length from the MBAP header includes the unit ID (1 byte) which is part of the MBAP header, not the response PDU.
-			if (current - start != header.length - 1) {
-				callback(header, response, modbus_error(errc::message_size_mismatch));
-				return current;
-			}
+      // Check response length consistency.
+      // Length from the MBAP header includes the unit ID (1 byte) which is part of the MBAP header, not the response PDU.
+      if (current - start != header.length - 1) {
+        callback(header, response, modbus_error(errc::message_size_mismatch));
+        return current;
+      }
 
-			callback(header, response, error);
-			return current;
-		};
-	}
+      callback(header, response, error);
+      return current;
+    };
+  }
 
   /// Struct to hold transaction details.
   struct transaction_t {
@@ -308,6 +304,9 @@ protected:
 
   /// Next transaction ID.
   std::uint16_t next_id = 0;
+
+  /// Maintain reference to io service
+  asio::io_service& ios_;
 
   /// Track connected state of client.
   bool connected_;
