@@ -253,7 +253,7 @@ struct Default_handler {
   Default_handler()
     : registers_(0x20000), coils_(0x20000) {}
 
-  response::read_coils handle(uint8_t unit_id, const request::read_coils& req) {
+  response::read_coils handle(uint8_t, const request::read_coils& req) {
     response::read_coils resp;
     resp.values.insert(
         resp.values.end(),
@@ -263,13 +263,13 @@ struct Default_handler {
     return resp;
   }
 
-  response::read_discrete_inputs handle(uint8_t unit_id, const request::read_discrete_inputs& req) {
+  response::read_discrete_inputs handle(uint8_t, const request::read_discrete_inputs& req) {
     response::read_discrete_inputs resp;
     resp.values.resize(req.count);
     return resp;
   }
 
-  response::read_holding_registers handle(uint8_t unit_id, const request::read_holding_registers& req) {
+  response::read_holding_registers handle(uint8_t, const request::read_holding_registers& req) {
     response::read_holding_registers resp;
     resp.values.insert(
         resp.values.end(),
@@ -279,13 +279,13 @@ struct Default_handler {
     return resp;
   }
 
-  response::read_input_registers handle(uint8_t unit_id, const request::read_input_registers& req) {
+  response::read_input_registers handle(uint8_t, const request::read_input_registers& req) {
     response::read_input_registers resp;
     resp.values.resize(req.count);
     return resp;
   }
 
-  response::write_single_coil handle(uint8_t unit_id, const request::write_single_coil& req) {
+  response::write_single_coil handle(uint8_t, const request::write_single_coil& req) {
     response::write_single_coil resp;
     coils_[req.address] = req.value;
     resp.address = req.address;
@@ -293,7 +293,7 @@ struct Default_handler {
     return resp;
   }
 
-  response::write_single_register handle(uint8_t unit_id, const request::write_single_register& req) {
+  response::write_single_register handle(uint8_t, const request::write_single_register& req) {
     response::write_single_register resp;
     registers_[req.address] = req.value;
     resp.address = req.address;
@@ -301,7 +301,7 @@ struct Default_handler {
     return resp;
   }
 
-  response::write_multiple_coils handle(uint8_t unit_id, const request::write_multiple_coils& req) {
+  response::write_multiple_coils handle(uint8_t, const request::write_multiple_coils& req) {
     response::write_multiple_coils resp;
     resp.address = req.address;
     resp.count = 0;
@@ -314,7 +314,7 @@ struct Default_handler {
     return resp;
   }
 
-  response::write_multiple_registers handle(uint8_t unit_id, const request::write_multiple_registers& req) {
+  response::write_multiple_registers handle(uint8_t, const request::write_multiple_registers& req) {
     response::write_multiple_registers resp;
     resp.address = req.address;
     resp.count = 0;
